@@ -1,0 +1,9 @@
+.nextflow.log*
+.nextflow
+*.out
+work
+data
+*.tar.gz
+*.tar.Z
+*.tgz
+Dockerfiles/.*
