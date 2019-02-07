@@ -11,4 +11,4 @@
 
 module load nextflow/19.01.0.5050-bin
 
-nextflow run -resume -profile pawsey_zeus ./main.nf --max_cpus 28 --fastq data/*_{1,2}.fq.gz --references data/SN15v9_OM.fasta
+nextflow run -resume -profile pawsey_zeus ./main.nf --max_cpus 28 --fastq "data/*_{1,2}.fq.gz" --references data/SN15v9_OM.fasta
