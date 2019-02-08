@@ -376,6 +376,7 @@ if ( params.references ) {
 
         """
         samtools sort -O bam -o "${sam.baseName}.bam" "${sam}"
+	samtools index "${sam.baseName}.bam"
         samtools idxstats "${sam.baseName}.bam" > "${bName}.idxstats"
         samtools flagstat "${sam.baseName}.bam" > "${bName}.flagstat"
         samtools stats "${sam.baseName}.bam" > "${bName}.stats"
