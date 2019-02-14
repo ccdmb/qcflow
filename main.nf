@@ -868,7 +868,7 @@ if ( params.references && !params.nomap ) {
 
         output:
         set val(ref_name), val(base_name), file("${base_name}.sam") into alignedReads
-        file "*.txt" into alignedStats
+        set val(ref_name), file("*.txt") into alignedStats
 
         """
         bbmap.sh \
@@ -936,6 +936,11 @@ if ( params.references && !params.nomap ) {
     }
 
 
+    joined4AlignmentMultiQC = samtoolsStats
+	.flatMap { r, i, f, s -> [[r, i], [r, f], [r, s]] }
+	.flatMap { r, s -> s.collect { [r, it] } }
+	.join(alignedStats.flatMap { r, s -> s.collect { [r, it] } }, by: 0)
+
     /*
      * Produce a multiqc report per reference for the isolates.
      */
@@ -947,9 +952,8 @@ if ( params.references && !params.nomap ) {
         publishDir "${params.outdir}/aligned/${ref}"
 
         input:
-        // ref    idxstats   flagstat   stats
-        set val(ref), file("*"), file("*"), file("*") from samtoolsStats
-        file "*" from alignedStats.collect()
+        set val(ref), file("*") from joined4AlignmentMultiQC
+            .groupTuple(by: 0)
 
         output:
         set file("multiqc.html"), file("multiqc_data") into alignmentMultiQCResults
