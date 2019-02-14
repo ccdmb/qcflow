@@ -14,7 +14,7 @@ module load blast+/2.7.1
 
 export NCPU=28
 export DBNAME=${DBNAME-krakendb}
-export DBS=${DBS-"bacteria archaea protozoa viral UniVec_core fungi human"}
+export DBS=${DBS-"bacteria archaea protozoa viral UniVec_Core fungi human"}
 
 # You can add your own genomes to REFS.
 # An example of how to add taxids required by kraken using sed is below.

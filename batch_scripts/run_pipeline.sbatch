@@ -11,4 +11,10 @@
 
 module load nextflow/19.01.0.5050-bin
 
-nextflow run -resume -profile pawsey_zeus ./main.nf --max_cpus 28 --fastq "data/*_{1,2}.fq.gz" --references data/SN15v9_OM.fasta
+nextflow run -resume -profile pawsey_zeus ./main.nf \
+  --max_cpus 28 \
+  --fastq "data/*_{1,2}.fq.gz" \
+  --krakendb "databases/krakendb" \
+  --contaminants "databases/krakendb/library/{bacteria,archaea,protozoa,viral,UniVec_Core,human}/library.fna" \
+  --references "references/*.fasta" \
+  --synthetic_contaminants "{data/synthetic_contaminants.fasta,databases/krakendb/library/UniVec_Core/library.fna}"
