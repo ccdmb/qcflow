@@ -76,7 +76,7 @@ if ( params.synthetic_contaminants ) {
         params.synthetic_contaminants,
         checkIfExists: true,
         type: "file"
-    )
+    ).collectFile(name: "synthetic_contaminants.fasta", newLine: true, sort: "deep")
 } else {
     log.info "Hey I need some synthetic contaminant sequences to filter out please."
     log.info "I suggest using at least the 'data/synthetic_contaminants.fasta' file."
@@ -311,7 +311,6 @@ process syntheticContaminantFilter {
 
     input:
     file "synthetic_contaminants.fasta" from syntheticContaminantSeqs
-        .collectFile(name: "synthetic_contaminants.fasta", newLine: true, sort: "deep")
     set val(base_name),
         val(fwd_name), val(rev_name),
         file("fwd"), file("rev") from adapterTrimmed4SyntheticContaminantFilter
@@ -349,7 +348,7 @@ process syntheticContaminantFilter {
       gcbins="auto" \
       k=31 \
       hdist=1 \
-      mcf=0.4
+      mcf=0.5
 
     kmercountmulti.sh \
       in1="${fwd_name}" \
