@@ -37,10 +37,8 @@ params.synthetic_contaminants = "data/synthetic_contaminants.fasta"
 params.quality_filter_phred = 25
 params.quality_trim_phred = 20
 params.contaminants = false
-params.nocontaminants = false
 params.nomap = false
 params.nomerge = false
-params.nokraken = false
 params.krakendb = false
 
 
@@ -100,171 +98,19 @@ if ( params.references ) {
 }
 
 
-/*
- * Download genome databases as necessary.
- */
-if ( !(params.krakendb && params.nokraken) || !(params.contaminants && params.nocontaminants)) {
-
-    // If we're only downloading for contaminants, we don't need fungi.
-    contaminantDBs = 'bacteria archaea viral UniVec_core'
-
-    if ( (!params.krakendb && !params.nokraken) ) {
-        toDownload = 'bacteria archaea viral UniVec_core fungi'
-    } else {
-        toDownload = contaminantDBs
-    }
-
-
-    /*
-     * Download and build the kraken databases.
-     * Building can take a bit of time, but disabling builds for the case
-     * of `params.nokraken` is too complicated.
-     */
-    process downloadKrakenDB {
-        label "download"
-        label "kraken"
-        label "blast"
-
-        storeDir "${params.outdir}/databases"
-
-        output:
-        file "krakendb" into krakenDownload
-
-        """
-        TODOWNLOAD="${toDownload}"
-
-        mkdir -p krakendb
-        kraken2-build --download-taxonomy --db krakendb
-
-        for db in \${TODOWNLOAD}; do
-          kraken2-build \
-            --threads ${task.cpus} \
-            --download-library \${db} \
-            --db krakendb
-        done
-
-        kraken2-build \
-            --threads ${task.cpus} \
-            --build \
-            --db krakendb \
-            --kmer-len 35 \
-            --minimizer-len 31 \
-            --minimizer-spaces 6 \
-
-        """
-    }
-
-
-    /* If we're not running kraken, don't set krakenDB channel.
-     * This is necessary to avoid creating the krakenDB channel twice in the
-     * case that we're downloading this stuff for contaminants, but using a
-     * specified krakendb.
-     */
-    if ( !params.krakendb ) {
-        krakenDownload.into {
-            krakenDB;
-            krakenDownload4Contaminants;
-        }
-    } else {
-        krakenDownload4Contaminants = krakenDownload
-    }
-
-
-    /*
-     * combine all contaminant fastas from the krakendb into a single fasta.
-     */
-    process getContaminantGenomes {
-        label "posix"
-        label "small_task"
-
-        input:
-        file "krakendb" from krakenDownload4Contaminants
-
-        output:
-        file "contaminants.fasta" into contaminants
-
-        when:
-        !params.contaminants
-
-        """
-        DBS="${contaminantDBs}"
-
-        for db in \${DBS}; do
-          cat krakendb/library/\${db}/library.fna >> contaminants.fasta
-        done
-        """
-    }
-}
-
-
-/*
- * Handle the krakendb/nokraken parameters.
- */
-if ( !params.nokraken && params.krakendb ) {
+if ( params.krakendb ) {
     krakenDB = Channel.fromPath( params.krakendb, checkIfExists: true, type: "dir" )
-} else if ( !params.nokraken ) {
-    log.info "You specified a Kraken database, but it doesn't exist."
-    log.info "Either provide the kraken database or disable kraken search with `--nokraken`."
-    exit 1
 }
 
 
-/*
- * Handle the contaminants/nocontaminants parameters.
- */
-if ( !params.nocontaminants && params.contaminants ) {
+if ( params.contaminants ) {
     contaminants = Channel.fromPath(
         params.contaminants,
         checkIfExists: true,
         type: "file"
-    )
-} else if ( !params.nocontaminants ) {
-    log.error "You've reached a point in the code that shouldn't be reached"
-    log.error "Please raise a bug."
-    exit 1
+    ).collectFile(name: "contaminants.fasta", newLine: true, sort: "deep")
 }
 
-
-/*
- * Mask the contaminants using the references.
- * This just converts all shared kmers to N's so that we avoid filtering out
- * genuine genetic content.
- */
-if ( params.references && params.contaminants && !params.nocontaminants ) {
-    process maskContaminants {
-        label "java"
-        label "bbmap"
-        label "small_task"
-
-        input:
-        file "contaminants.fasta" from contaminants
-            .collectFile(name: "contaminants.fasta", newLine: true, sort: "deep")
-        file "references.fasta" from references4MaskContaminants
-            .collectFile(name: "references.fasta", newLine: true, sort: "deep")
-
-        output:
-        file "masked_contaminants.fasta" into maskedContaminants
-
-        """
-        bbduk.sh \
-          -Xmx${task.memory.toGiga()}g \
-          t=${task.cpus} \
-          in=contaminants.fasta \
-          ref=references.fasta \
-          out=masked_contaminants.fasta \
-          k=25 \
-          ktrim=N
-        """
-    }
-} else if ( params.contaminants ) {
-    maskedContaminants = contaminants
-        .collectFile(name: "contaminants.fasta", newLine: true, sort: deep)
-} else if ( !params.nocontaminants ) {
-    log.error "Hey I reached a point in the code that I shouldn't be able to."
-    log.error "I don't have contaminants or a reference."
-    log.error "Please raise an issue."
-    exit 1
-}
 
 // END OF INPUT VALIDATION
 
@@ -599,7 +445,42 @@ qualityTrimmedStats
   .set { qualityTrimmedStats4JointQC }
 
 
-if ( !params.nocontaminants ) {
+/*
+ * Mask the contaminants using the references.
+ * This just converts all shared kmers to N's so that we avoid filtering out
+ * genuine genetic content.
+ */
+if ( params.references && params.contaminants ) {
+    process maskContaminants {
+        label "java"
+        label "bbmap"
+        label "small_task"
+
+        input:
+        file "contaminants.fasta" from contaminants
+        file "references.fasta" from references4MaskContaminants
+            .collectFile(name: "references.fasta", newLine: true, sort: "deep")
+
+        output:
+        file "masked_contaminants.fasta" into maskedContaminants
+
+        """
+        bbduk.sh \
+          -Xmx${task.memory.toGiga()}g \
+          t=${task.cpus} \
+          in=contaminants.fasta \
+          ref=references.fasta \
+          out=masked_contaminants.fasta \
+          k=25 \
+          ktrim=N
+        """
+    }
+} else if ( params.contaminants ) {
+    maskedContaminants = contaminants
+}
+
+
+if ( params.contaminants ) {
 
     // This just adds a new val field to differentiate trimmed from untrimmed output.
     pairs4ContaminantFilter = syntheticContaminantFiltered4ContaminantFilter
@@ -813,7 +694,7 @@ tmpPairs4ReadQC = fastqPairs4QC.flatMap {
 /*
  * Because contaminant filtering is optional, we have to handle both cases.
  */
-if ( !params.nocontaminants ) {
+if ( params.contaminants ) {
     files4PerStepQC = tmpFiles4PerStepQC.concat(contaminantStats4PerStepQC)
     files4JointQC = tmpFiles4JointQC.concat(contaminantStats4JointQC)
 
@@ -821,7 +702,7 @@ if ( !params.nocontaminants ) {
         contaminantFiltered4QC.flatMap {
             b, t, fn, rn, ff, rf -> [
                 [b, "contaminant_filtered_${t}", "forward", ff],
-                [b, "contaminant_filtered_${t}", "forward", ff]
+                [b, "contaminant_filtered_${t}", "reverse", rf]
             ]
         }
     )
@@ -1081,7 +962,7 @@ if ( params.references && !params.nomap ) {
 }
 
 
-if ( !params.nokraken ) {
+if ( params.krakendb ) {
 
     /*
      * Classify the reads using Kraken to detect uncommon contamination.
@@ -1100,9 +981,6 @@ if ( !params.nokraken ) {
 
         output:
         set file("${base_name}.tsv"), file("${base_name}_report.txt") into krakenResults
-
-        when:
-        !params.nokraken
 
         """
         kraken2 \
@@ -1123,15 +1001,16 @@ if ( !params.nokraken ) {
  * Merge the fastq read channels and the empirical adapters.
  */
 
-if ( params.nocontaminants ) {
-    joined4MergePairs = syntheticContaminantFiltered4MergePairs
-        .join(foundAdapters4MergePairs, by: 0)
-} else {
+if ( params.contaminants ) {
     joined4MergePairs = contaminantFiltered4MergePairs
         .filter { b, t, fn, rn, ff, rf -> t == "untrimmed" }
         .map { b, t, fn, rn, ff, rf -> [b, fn, rn, ff, rf] }
         .join(foundAdapters4MergePairs, by: 0)
+} else {
+    joined4MergePairs = syntheticContaminantFiltered4MergePairs
+        .join(foundAdapters4MergePairs, by: 0)
 }
+
 
 if ( !params.nomerge ) {
     /*
