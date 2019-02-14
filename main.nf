@@ -174,7 +174,7 @@ foundAdapters.into {
 process getRawStats {
     label "java"
     label "bbmap"
-    label "small_task"
+    label "medium_task"
 
     tag { base_name }
 
@@ -453,7 +453,7 @@ if ( params.references && params.contaminants ) {
     process maskContaminants {
         label "java"
         label "bbmap"
-        label "small_task"
+        label "medium_task"
 
         input:
         file "contaminants.fasta" from contaminants
