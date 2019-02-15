@@ -535,8 +535,8 @@ if ( params.contaminants ) {
           lhist="${base_name}_contaminant_filtered_lhist.txt" \
           gchist="${base_name}_contaminant_filtered_gchist.txt" \
           gcbins="auto" \
-          k=27 \
-          hdist=1 \
+          k=25 \
+          hdist=0 \
           mcf=0.6
 
         kmercountmulti.sh \
@@ -938,7 +938,7 @@ if ( params.references && !params.nomap ) {
 
     joined4AlignmentMultiQC = samtoolsStats
 	.flatMap { r, i, f, s -> [[r, i], [r, f], [r, s]] }
-	.join(alignedStats.flatMap { r, s -> s.collect { [r, it] } }, by: 0)
+	.concat(alignedStats.flatMap { r, s -> s.collect { [r, it] } }, by: 0)
 
     /*
      * Produce a multiqc report per reference for the isolates.
