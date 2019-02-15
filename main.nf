@@ -492,7 +492,7 @@ if ( params.contaminants ) {
     process contaminantFilter {
         label "java"
         label "bbmap"
-        label "biggish_task"
+        label "big_task"
 
         tag { "${base_name} - ${trimmed}" }
 
