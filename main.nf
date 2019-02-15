@@ -32,7 +32,8 @@ if (params.help){
 
 params.fastq = false
 params.references = false
-params.adapters = "data/adapters_truseq_{fwd,rev}.fasta"
+params.adapter1 = "data/adapters_truseq_fwd.fasta"
+params.adapter2 = "data/adapters_truseq_rev.fasta"
 params.synthetic_contaminants = "data/synthetic_contaminants.fasta"
 params.quality_filter_phred = 10
 params.quality_trim_phred = 10
@@ -57,14 +58,14 @@ if ( params.fastq ) {
 }
 
 
-if ( params.adapters ) {
-    adapterSeqs = Channel.fromFilePairs(
-        params.adapters,
-        checkIfExists: true,
-        size: 2,
-        type: "file",
-        flat: true
-    ).map { b, f, r -> [f, r] }
+if ( params.adapter1 && params.adapter2 ) {
+    adapter1 = Channel.fromPath(params.adapter1, checkIfExists: true, type: "file")
+        .collectFile(name: 'adapter1.fasta', newLine: true, sort: "deep")
+        .first()
+
+    adapter2 = Channel.fromPath(params.adapter2, checkIfExists: true, type: "file")
+        .collectFile(name: 'adapter2.fasta', newLine: true, sort: "deep")
+        .first()
 } else {
     log.info "Hey I need some adapter sequences to trim please."
     log.info "Some TruSeq adapters are in the 'data' folder."
@@ -119,24 +120,10 @@ if ( params.contaminants ) {
 fastqPairs.into {
     fastqPairs4RawStats;
     fastqPairs4QC;
-    fastqPairs4SeparateNames;
-    fastqPairs4FindAdapters;
+    fastqPairs4AdapterTrimming;
+    fastqPairs4Cutadapt;
     fastqPairs4Alignment;
     fastqPairs4Kraken;
-    fastqPairs4SplitBBDuk;
-}
-
-fastqPairs4SeparateNames
-    .map { b, f, r -> [b, f.name, r.name, f, r]}
-    .into {
-        fastqPairs4AdapterTrimming;
-        fastqPairs4Cutadapt;
-    }
-
-
-adapterSeqs.into {
-    adapterSeqs4Trimming;
-    adapterSeqs4Cutadapt;
 }
 
 
@@ -196,8 +183,9 @@ rawStats
   .set { rawStats4JointQC }
 
 
-// joinedAdapters = fastqPairs4AdapterTrimming.join(foundAdapters4Trimming, by: 0)
-
+/*
+ * Trim adapters using BBDuk.
+ */
 process adapterTrimming {
     label "java"
     label "bbmap"
@@ -208,14 +196,12 @@ process adapterTrimming {
     publishDir "${params.outdir}/read_processing/adapter_trimmed"
 
     input:
-    set file("fwd_adapters.fasta"), file("rev_adapters.fasta") from adapterSeqs4Trimming
-    set val(base_name), val(fwd_name), val(rev_name), 
-        file("fwd"), file("rev") from fastqPairs4AdapterTrimming
+    file "fwd_adapters.fasta" from adapter1
+    file "rev_adapters.fasta" from adapter2
+    set val(base_name), val(fwd_name), val(rev_name), file("fwd"), file("rev") from fastqPairs4AdapterTrimming.map { b, f, r -> [b, f.name, r.name, f, r] }
 
     output:
-    set val(base_name),
-        val(fwd_name), val(rev_name),
-        file("${fwd_name}"), file("${rev_name}") into adapterTrimmed
+    set val(base_name), val(fwd_name), val(rev_name), file(fwd_name), file(rev_name) into adapterTrimmed
     set val(base_name), file("*.txt") into adapterTrimmedStats
 
     """
@@ -261,7 +247,7 @@ process adapterTrimming {
 
 adapterTrimmed.into {
     adapterTrimmed4QC;
-    adapterTrimmed4SyntheticContaminantFilter;
+    adapterTrimmed4QualityTrimming;
 }
 
 adapterTrimmedStats
@@ -271,79 +257,9 @@ adapterTrimmedStats
   .set { adapterTrimmedStats4JointQC }
 
 
-process syntheticContaminantFilter {
-    label "java"
-    label "bbmap"
-    label "medium_task"
-
-    tag { base_name }
-
-    publishDir "${params.outdir}/read_processing/synthetic_contaminant_filtered"
-
-    input:
-    file "synthetic_contaminants.fasta" from syntheticContaminantSeqs
-    set val(base_name),
-        val(fwd_name), val(rev_name),
-        file("fwd"), file("rev") from adapterTrimmed4SyntheticContaminantFilter
-
-    output:
-    set val(base_name),
-        val(fwd_name), val(rev_name),
-        file("${fwd_name}"), file("${rev_name}") into syntheticContaminantFiltered
-    set val(base_name), file("*.txt") into syntheticContaminantStats
-
-    """
-    # This keeps the extensions around so we can autodetect the format.
-    FWD="in_${fwd_name}"
-    ln -sf fwd "\${FWD}"
-
-    REV="in_${rev_name}"
-    ln -sf rev "\${REV}"
-
-    bbduk.sh \
-      -Xmx${task.memory.toGiga()}g \
-      t=${task.cpus} \
-      in1="\${FWD}" \
-      in2="\${REV}" \
-      out1="${fwd_name}" \
-      out2="${rev_name}" \
-      ref="synthetic_contaminants.fasta" \
-      stats="${base_name}_synthetic_contaminant_filtered_stats.txt" \
-      bhist="${base_name}_synthetic_contaminant_filtered_bhist.txt" \
-      qhist="${base_name}_synthetic_contaminant_filtered_qhist.txt" \
-      qchist="${base_name}_synthetic_contaminant_filtered_qchist.txt" \
-      aqhist="${base_name}_synthetic_contaminant_filtered_aqhist.txt" \
-      bqhist="${base_name}_synthetic_contaminant_filtered_bqhist.txt" \
-      lhist="${base_name}_synthetic_contaminant_filtered_lhist.txt" \
-      gchist="${base_name}_synthetic_contaminant_filtered_gchist.txt" \
-      gcbins="auto" \
-      k=31 \
-      hdist=1 \
-      mcf=0.5
-
-    kmercountmulti.sh \
-      in1="${fwd_name}" \
-      in2="${rev_name}" \
-      sweep=25,31,37,45,55,67,81,91 \
-      stdev \
-      out="${base_name}_synthetic_contaminant_filtered_kmercountmulti.txt"
-    """
-}
-
-syntheticContaminantFiltered.into {
-    syntheticContaminantFiltered4QualityTrimming;
-    syntheticContaminantFiltered4ContaminantFilter;
-    syntheticContaminantFiltered4QC;
-    syntheticContaminantFiltered4MergePairs;
-}
-
-syntheticContaminantStats
-  .map { b, f -> [b, "synthetic_contaminant_filtered", f] }
-  .tap { syntheticContaminantStats4PerStepQC }
-  .flatMap { b, s, f -> f }
-  .set { syntheticContaminantStats4JointQC }
-
-
+/*
+ * Trim adapter trimmed reads from BBDuk.
+ */
 process qualityTrimming {
     label "java"
     label "bbmap"
@@ -356,12 +272,11 @@ process qualityTrimming {
     input:
     set val(base_name),
         val(fwd_name), val(rev_name),
-        file("fwd"), file("rev") from syntheticContaminantFiltered4QualityTrimming
+        file("fwd"), file("rev") from adapterTrimmed4QualityTrimming
 
     output:
-    set val(base_name),
-        val(fwd_name), val(rev_name),
-        file("${fwd_name}"), file("${rev_name}") into qualityTrimmed
+    set val(base_name), val(fwd_name), val(rev_name),
+        file(fwd_name), file(rev_name) into qualityTrimmed
     set val(base_name), file("*.txt") into qualityTrimmedStats
 
     """
@@ -403,7 +318,7 @@ process qualityTrimming {
 }
 
 qualityTrimmed.into {
-    qualityTrimmed4ContaminantFilter;
+    qualityTrimmed4SyntheticContaminantFilter;
     qualityTrimmed4QC;
 }
 
@@ -415,11 +330,215 @@ qualityTrimmedStats
 
 
 /*
- * Mask the contaminants using the references.
- * This just converts all shared kmers to N's so that we avoid filtering out
- * genuine genetic content.
+ * Combo adapter and quality trimming with cutadapt.
  */
+process cutadapt {
+    label "python3"
+    label "cutadapt"
+    label "medium_task"
+
+    tag { base_name }
+
+    publishDir "${params.outdir}/read_processing/cutadapt_trimmed"
+
+    input:
+    file "fwd_adapters.fasta" from adapter1
+    file "rev_adapters.fasta" from adapter2
+    set val(base_name), val(fwd_name), val(rev_name), file("fwd"), file("rev") from fastqPairs4Cutadapt.map { b, f, r -> [b, f.name, r.name, f, r] }
+
+    output:
+    set val(base_name), val(fwd_name), val(rev_name), file(fwd_name), file(rev_name) into cutadaptTrimmed
+    set val(base_name), file("*.txt") into cutadaptStats
+
+    """
+    # This bit is just so that we can keep the extensions for cutadapt
+    # to autodetect the format.
+    FWD="init_${fwd_name}"
+    ln -sf fwd "\${FWD}"
+
+    REV="init_${rev_name}"
+    ln -sf rev "\${REV}"
+
+    # Run cutadapt 3 times to trim that stuff yo.
+    cutadapt \
+        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
+        -a "file:fwd_adapters.fasta" \
+        -A "file:rev_adapters.fasta" \
+        --minimum-length "${params.minimum_read_length}" \
+        -n 3 \
+        --cores ${task.cpus} \
+        -o "tmp1_${fwd_name}" \
+        -p "tmp1_${rev_name}" \
+        "\${FWD}" \
+        "\${REV}" \
+        > ${base_name}_cutadapt_pass1.txt
+
+    cutadapt \
+        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
+        -a "file:fwd_adapters.fasta" \
+        -A "file:rev_adapters.fasta" \
+        --minimum-length "${params.minimum_read_length}" \
+        -n 3 \
+        --cores ${task.cpus} \
+        -o "${fwd_name}" \
+        -p "${rev_name}" \
+        "tmp1_${fwd_name}" \
+        "tmp1_${rev_name}" \
+        > ${base_name}_cutadapt_pass2.txt
+    """
+}
+
+cutadaptTrimmed.into {
+    cutadaptTrimmed4BBQC;
+    cutadaptTrimmed4QC;
+    cutadaptTrimmed4SyntheticContaminantFilter;
+}
+
+cutadaptStats
+  .map { b, f -> [b, "cutadapt_trimmed", f] }
+  .tap { cutadaptStats4PerStepQC }
+  .flatMap { b, s, f -> f }
+  .set { cutadaptStats4JointQC }
+
+
+/*
+ * Get BBDuk stats for Cutadapt trimmed reads.
+ */
+process getCutadaptBBQCStats {
+    label "java"
+    label "bbmap"
+    label "medium_task"
+
+    tag { base_name }
+
+    publishDir "${params.outdir}/read_processing/cutadapt_trimmed"
+
+    input:
+    set val(base_name), val(fwd_name), val(rev_name), file(fwd_read), file(rev_read) from cutadaptTrimmed4BBQC
+
+    output:
+    set val(base_name), file("*.txt") into cutadaptBBQCStats
+
+    """
+    bbcountunique.sh \
+      -Xmx${task.memory.toGiga()}g \
+      in1="${fwd_read}" \
+      in2="${rev_read}" \
+      out="${base_name}_cutadapt_trimmed_count_unique.txt"
+
+    kmercountmulti.sh \
+      in1="${fwd_read}" \
+      in2="${rev_read}" \
+      sweep=25,31,37,45,55,67,81,91 \
+      stdev \
+      out="${base_name}_cutadapt_trimmed_kmercountmulti.txt"
+
+    bbduk.sh \
+      -Xmx${task.memory.toGiga()}g \
+      t=${task.cpus} \
+      in1="${fwd_read}" \
+      in2="${rev_read}" \
+      stats="${base_name}_cutadapt_trimmed_stats.txt" \
+      bhist="${base_name}_cutadapt_trimmed_bhist.txt" \
+      qhist="${base_name}_cutadapt_trimmed_qhist.txt" \
+      qchist="${base_name}_cutadapt_trimmed_qchist.txt" \
+      aqhist="${base_name}_cutadapt_trimmed_aqhist.txt" \
+      bqhist="${base_name}_cutadapt_trimmed_bqhist.txt" \
+      lhist="${base_name}_cutadapt_trimmed_lhist.txt" \
+      gchist="${base_name}_cutadapt_trimmed_gchist.txt" \
+      gcbins="auto"
+    """
+}
+
+cutadaptBBQCStats
+  .map { b, f -> [b, "raw", f] }
+  .tap { cutadaptBBQCStats4PerStepQC }
+  .flatMap { b, s, f -> f }
+  .set { cutadaptBBQCStats4JointQC }
+
+
+/*
+ * Filter PHiX and other common contaminants from reads.
+ */
+process syntheticContaminantFilter {
+    label "java"
+    label "bbmap"
+    label "medium_task"
+
+    tag { base_name }
+
+    publishDir "${params.outdir}/read_processing/synthetic_contaminant_filtered"
+
+    input:
+    file "synthetic_contaminants.fasta" from syntheticContaminantSeqs
+    set val(base_name), val(fwd_name), val(rev_name),
+        file("fwd"), file("rev") from cutadaptTrimmed4SyntheticContaminantFilter
+
+    output:
+    set val(base_name), val(fwd_name), val(rev_name),
+        file(fwd_name), file(rev_name) into syntheticContaminantFiltered
+    set val(base_name), file("*.txt") into syntheticContaminantStats
+
+    """
+    # This keeps the extensions around so we can autodetect the format.
+    FWD="in_${fwd_name}"
+    ln -sf fwd "\${FWD}"
+
+    REV="in_${rev_name}"
+    ln -sf rev "\${REV}"
+
+    bbduk.sh \
+      -Xmx${task.memory.toGiga()}g \
+      t=${task.cpus} \
+      in1="\${FWD}" \
+      in2="\${REV}" \
+      out1="${fwd_name}" \
+      out2="${rev_name}" \
+      ref="synthetic_contaminants.fasta" \
+      stats="${base_name}_synthetic_contaminant_filtered_stats.txt" \
+      bhist="${base_name}_synthetic_contaminant_filtered_bhist.txt" \
+      qhist="${base_name}_synthetic_contaminant_filtered_qhist.txt" \
+      qchist="${base_name}_synthetic_contaminant_filtered_qchist.txt" \
+      aqhist="${base_name}_synthetic_contaminant_filtered_aqhist.txt" \
+      bqhist="${base_name}_synthetic_contaminant_filtered_bqhist.txt" \
+      lhist="${base_name}_synthetic_contaminant_filtered_lhist.txt" \
+      gchist="${base_name}_synthetic_contaminant_filtered_gchist.txt" \
+      gcbins="auto" \
+      k=31 \
+      hdist=1 \
+      mcf=0.5 \
+      minavgquality="${params.quality_filter_phred}" \
+      minlength="${params.minimum_read_length}"
+
+    kmercountmulti.sh \
+      in1="${fwd_name}" \
+      in2="${rev_name}" \
+      sweep=25,31,37,45,55,67,81,91 \
+      stdev \
+      out="${base_name}_synthetic_contaminant_filtered_kmercountmulti.txt"
+    """
+}
+
+syntheticContaminantFiltered.into {
+    syntheticContaminantFiltered4ContaminantFilter;
+    syntheticContaminantFiltered4QC;
+    syntheticContaminantFiltered4MergePairs;
+}
+
+syntheticContaminantStats
+  .map { b, f -> [b, "synthetic_contaminant_filtered", f] }
+  .tap { syntheticContaminantStats4PerStepQC }
+  .flatMap { b, s, f -> f }
+  .set { syntheticContaminantStats4JointQC }
+
+
 if ( params.references && params.contaminants ) {
+
+    /*
+     * Mask the contaminants using the references.
+     * This just converts all shared kmers to N's so that we avoid filtering out
+     * genuine genetic content.
+     */
     process maskContaminants {
         label "java"
         label "bbmap"
@@ -451,34 +570,28 @@ if ( params.references && params.contaminants ) {
 
 if ( params.contaminants ) {
 
-    // This just adds a new val field to differentiate trimmed from untrimmed output.
-    pairs4ContaminantFilter = syntheticContaminantFiltered4ContaminantFilter
-        .map { b, fn, rn, ff, fr -> [b, "untrimmed", fn, rn, ff, fr] }
-        .concat(
-            qualityTrimmed4ContaminantFilter
-                .map { b, fn, rn, ff, fr -> [b, "trimmed", fn, rn, ff, fr] }
-        )
-
+    /*
+     * Filter contaminants from the reads.
+     * Use pretty strict settings to avoid false positives.
+     */
     process contaminantFilter {
         label "java"
         label "bbmap"
         label "bigmem_task" 
 
-        tag { "${base_name} - ${trimmed}" }
+        tag { base_name }
 
-        publishDir "${params.outdir}/read_processing/contaminant_filtered_${trimmed}"
+        publishDir "${params.outdir}/read_processing/contaminant_filtered"
 
         input:
         file "contaminants.fasta" from maskedContaminants
-        set val(base_name), val(trimmed),
-            val(fwd_name), val(rev_name),
-            file("fwd"), file("rev") from pairs4ContaminantFilter
+        set val(base_name), val(fwd_name), val(rev_name),
+            file("fwd"), file("rev") from syntheticContaminantFiltered4ContaminantFilter
 
         output:
-        set val(base_name), val(trimmed),
-            val(fwd_name), val(rev_name),
-            file("${fwd_name}"), file("${rev_name}") into contaminantFiltered
-        set val(base_name), val(trimmed), file("*.txt") into contaminantStats
+        set val(base_name), val(fwd_name), val(rev_name),
+            file(fwd_name), file(rev_name) into contaminantFiltered
+        set val(base_name), file("*.txt") into contaminantStats
 
         """
         # This keeps the extensions around so we can autodetect the format.
@@ -525,97 +638,11 @@ if ( params.contaminants ) {
     }
 
     contaminantStats
-      .map { b, t, f -> [b, "contaminant_filtered_${t}", f] }
+      .map { b, f -> [b, "contaminant_filtered", f] }
       .tap { contaminantStats4PerStepQC }
       .flatMap { b, s, f -> f }
       .set { contaminantStats4JointQC }
 }
-
-
-joined4Cutadapt = fastqPairs4Cutadapt.join(foundAdapters4Cutadapt, by: 0)
-
-process cutadapt {
-    label "python3"
-    label "cutadapt"
-    label "small_task"
-
-    tag { base_name }
-
-    publishDir "${params.outdir}/read_processing/cutadapt_trimmed"
-
-    input:
-    set file("fwd_adapters.fasta"), file("rev_adapters.fasta") from adapterSeqs4Cutadapt
-    set val(base_name),
-        val(fwd_out), val(rev_out), file("fwd"), file("rev"),
-        file("fwd_eadapters.fasta"), file("rev_eadapters.fasta") from joined4Cutadapt
-
-    output:
-    set val(base_name), file(fwd_out), file(rev_out) into cutadaptTrimmed
-    set val(base_name), file("*.txt") into cutadaptStats
-
-    """
-    # This bit is just so that we can keep the extensions for cutadapt
-    # to autodetect the format.
-    FWD="init_${fwd_out}"
-    ln -sf fwd "\${FWD}"
-
-    REV="init_${rev_out}"
-    ln -sf rev "\${REV}"
-
-    # Run cutadapt 3 times to trim that stuff yo.
-    #
-    # Add this to use the bbmerge adapters
-    # -a "file:fwd_eadapters.fasta" \
-    # -A "file:rev_eadapters.fasta" \
-
-    cutadapt \
-        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
-        -a "file:fwd_adapters.fasta" \
-        -A "file:rev_adapters.fasta" \
-        --minimum-length "${params.minimum_read_length}" \
-        -n 1 \
-        --cores ${task.cpus} \
-        -o "tmp1_${fwd_out}" \
-        -p "tmp1_${rev_out}" \
-        "\${FWD}" \
-        "\${REV}" \
-        > ${base_name}_cutadapt_pass1.txt
-
-    cutadapt \
-        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
-        -a "file:fwd_adapters.fasta" \
-        -A "file:rev_adapters.fasta" \
-        --minimum-length "${params.minimum_read_length}" \
-        -n 1 \
-        --cores ${task.cpus} \
-        -o "tmp2_${fwd_out}" \
-        -p "tmp2_${rev_out}" \
-        "tmp1_${fwd_out}" \
-        "tmp1_${rev_out}" \
-        > ${base_name}_cutadapt_pass2.txt
-
-    cutadapt \
-        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
-        -a "file:fwd_adapters.fasta" \
-        -A "file:rev_adapters.fasta" \
-        --minimum-length "${params.minimum_read_length}" \
-        -n 1 \
-        --cores ${task.cpus} \
-        -o "${fwd_out}" \
-        -p "${rev_out}" \
-        "tmp2_${fwd_out}" \
-        "tmp2_${rev_out}" \
-        > ${base_name}_cutadapt_pass3.txt
-    """
-}
-
-cutadaptTrimmed.set { cutadaptTrimmed4QC }
-
-cutadaptStats
-  .map { b, f -> [b, "cutadapt_trimmed", f] }
-  .tap { cutadaptStats4PerStepQC }
-  .flatMap { b, s, f -> f }
-  .set { cutadaptStats4JointQC }
 
 
 /*
@@ -628,14 +655,16 @@ tmpFiles4PerStepQC = rawStats4PerStepQC.concat(
     adapterTrimmedStats4PerStepQC,
     syntheticContaminantStats4PerStepQC,
     qualityTrimmedStats4PerStepQC,
-    cutadaptStats4PerStepQC
+    cutadaptStats4PerStepQC,
+    cutadaptBBQCStats4PerStepQC
 )
 
 tmpFiles4JointQC = rawStats4JointQC.concat(
     adapterTrimmedStats4JointQC,
     syntheticContaminantStats4JointQC,
     qualityTrimmedStats4JointQC,
-    cutadaptStats4JointQC
+    cutadaptStats4JointQC,
+    cutadaptBBQCStats4JointQC
 )
 
 tmpPairs4ReadQC = fastqPairs4QC.flatMap {
@@ -651,8 +680,8 @@ tmpPairs4ReadQC = fastqPairs4QC.flatMap {
                               [b, "synthetic_contaminant_filtered", "reverse", rf]]
     },
     cutadaptTrimmed4QC.flatMap {
-        b, f, r -> [[b, "cutadapt_trimmed", "forward", f],
-                    [b, "cutadapt_trimmed", "reverse", r]]
+        b, fn, rn, ff, rf -> [[b, "cutadapt_trimmed", "forward", ff],
+                              [b, "cutadapt_trimmed", "reverse", rf]]
     },
     qualityTrimmed4QC.flatMap {
         b, fn, rn, ff, rf -> [[b, "quality_trimmed", "forward", ff],
@@ -669,9 +698,9 @@ if ( params.contaminants ) {
 
     pairs4ReadQC = tmpPairs4ReadQC.concat(
         contaminantFiltered4QC.flatMap {
-            b, t, fn, rn, ff, rf -> [
-                [b, "contaminant_filtered_${t}", "forward", ff],
-                [b, "contaminant_filtered_${t}", "reverse", rf]
+            b, fn, rn, ff, rf -> [
+                [b, "contaminant_filtered", "forward", ff],
+                [b, "contaminant_filtered", "reverse", rf]
             ]
         }
     )
