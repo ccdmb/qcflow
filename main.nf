@@ -939,6 +939,8 @@ if ( params.references && !params.nomap ) {
     joined4AlignmentMultiQC = samtoolsStats
 	.flatMap { r, i, f, s -> [[r, i], [r, f], [r, s]] }
 	.concat(alignedStats.flatMap { r, s -> s.collect { [r, it] } })
+	.filter { r, f -> !f.name.endsWith("qhist.txt") }
+	.filter { r, f -> !f.name.endsWith("qahist.txt") }
 
     /*
      * Produce a multiqc report per reference for the isolates.
