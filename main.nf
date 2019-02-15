@@ -938,7 +938,6 @@ if ( params.references && !params.nomap ) {
 
     joined4AlignmentMultiQC = samtoolsStats
 	.flatMap { r, i, f, s -> [[r, i], [r, f], [r, s]] }
-	.flatMap { r, s -> s.collect { [r, it] } }
 	.join(alignedStats.flatMap { r, s -> s.collect { [r, it] } }, by: 0)
 
     /*
@@ -950,6 +949,8 @@ if ( params.references && !params.nomap ) {
         label "small_task"
 
         publishDir "${params.outdir}/aligned/${ref}"
+
+	tag { ref }
 
         input:
         set val(ref), file("*") from joined4AlignmentMultiQC
