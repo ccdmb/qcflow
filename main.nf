@@ -34,8 +34,9 @@ params.fastq = false
 params.references = false
 params.adapters = "data/adapters_truseq_{fwd,rev}.fasta"
 params.synthetic_contaminants = "data/synthetic_contaminants.fasta"
-params.quality_filter_phred = 25
-params.quality_trim_phred = 20
+params.quality_filter_phred = 10
+params.quality_trim_phred = 10
+params.minimum_read_length = 50
 params.contaminants = false
 params.nomap = false
 params.nomerge = false
@@ -138,35 +139,6 @@ adapterSeqs.into {
     adapterSeqs4Cutadapt;
 }
 
-/*
- * We find adapter sequences from the reads themselves and use them.
- */
-process findAdapters {
-    label "java"
-    label "bbmap"
-    label "small_task"
-
-    tag { base_name }
-
-    input:
-    set val(base_name), file(fwd_read), file(rev_read) from fastqPairs4FindAdapters
-
-    output:
-    set val(base_name), file("${fwd_read.baseName}_adapters.fasta"),
-        file("${rev_read.baseName}_adapters.fasta") into foundAdapters
-
-    """
-    bbmerge.sh in="${fwd_read}" outa="${fwd_read.baseName}_adapters.fasta"
-    bbmerge.sh in="${rev_read}" outa="${rev_read.baseName}_adapters.fasta"
-    """
-}
-
-foundAdapters.into {
-    foundAdapters4Trimming;
-    foundAdapters4Cutadapt;
-    foundAdapters4MergePairs
-}
-
 
 /*
  * Initial QC stats to check if we improve things.
@@ -224,7 +196,7 @@ rawStats
   .set { rawStats4JointQC }
 
 
-joinedAdapters = fastqPairs4AdapterTrimming.join(foundAdapters4Trimming, by: 0)
+// joinedAdapters = fastqPairs4AdapterTrimming.join(foundAdapters4Trimming, by: 0)
 
 process adapterTrimming {
     label "java"
@@ -237,9 +209,8 @@ process adapterTrimming {
 
     input:
     set file("fwd_adapters.fasta"), file("rev_adapters.fasta") from adapterSeqs4Trimming
-    set val(base_name),
-        val(fwd_name), val(rev_name), file("fwd"), file("rev"),
-        file("fwd_eadapters.fasta"), file("rev_eadapters.fasta") from joinedAdapters
+    set val(base_name), val(fwd_name), val(rev_name), 
+        file("fwd"), file("rev") from fastqPairs4AdapterTrimming
 
     output:
     set val(base_name),
@@ -258,11 +229,11 @@ process adapterTrimming {
     bbduk.sh \
       -Xmx${task.memory.toGiga()}g \
       t=${task.cpus} \
-      in1="in_${fwd_name}" \
-      in2="in_${rev_name}" \
+      in1="\${FWD}" \
+      in2="\${REV}" \
       out1="${fwd_name}" \
       out2="${rev_name}" \
-      ref="fwd_adapters.fasta,rev_adapters.fasta,fwd_eadapters.fasta,rev_eadapters.fasta" \
+      ref="fwd_adapters.fasta,rev_adapters.fasta" \
       stats="${base_name}_adapter_trimmed_stats.txt" \
       bhist="${base_name}_adapter_trimmed_bhist.txt" \
       qhist="${base_name}_adapter_trimmed_qhist.txt" \
@@ -276,8 +247,8 @@ process adapterTrimming {
       k=23 \
       mink=11 \
       hdist=1 \
-      minlength=50 \
-      minavgquality=25
+      minavgquality="${params.quality_filter_phred}" \
+      minlength="${params.minimum_read_length}"
 
     kmercountmulti.sh \
       in1="${fwd_name}" \
@@ -332,8 +303,8 @@ process syntheticContaminantFilter {
     bbduk.sh \
       -Xmx${task.memory.toGiga()}g \
       t=${task.cpus} \
-      in1="in_${fwd_name}" \
-      in2="in_${rev_name}" \
+      in1="\${FWD}" \
+      in2="\${REV}" \
       out1="${fwd_name}" \
       out2="${rev_name}" \
       ref="synthetic_contaminants.fasta" \
@@ -404,8 +375,8 @@ process qualityTrimming {
     bbduk.sh \
       -Xmx${task.memory.toGiga()}g \
       t=${task.cpus} \
-      in1="in_${fwd_name}" \
-      in2="in_${rev_name}" \
+      in1="\${FWD}" \
+      in2="\${REV}" \
       out1="${fwd_name}" \
       out2="${rev_name}" \
       stats="${base_name}_quality_trimmed_stats.txt" \
@@ -417,11 +388,10 @@ process qualityTrimming {
       lhist="${base_name}_quality_trimmed_lhist.txt" \
       gchist="${base_name}_quality_trimmed_gchist.txt" \
       gcbins="auto" \
-      maq="${params.quality_filter_phred}" \
+      minavgquality="${params.quality_filter_phred}" \
       qtrim=r \
       trimq="${params.quality_trim_phred}" \
-      minlength=50 \
-      minavgquality=25
+      minlength="${params.minimum_read_length}"
 
     kmercountmulti.sh \
       in1="${fwd_name}" \
@@ -521,8 +491,8 @@ if ( params.contaminants ) {
         bbduk.sh \
           -Xmx${task.memory.toGiga()}g \
           t=${task.cpus} \
-          in1="in_${fwd_name}" \
-          in2="in_${rev_name}" \
+          in1="\${FWD}" \
+          in2="\${REV}" \
           out1="${fwd_name}" \
           out2="${rev_name}" \
           ref="contaminants.fasta" \
@@ -599,10 +569,10 @@ process cutadapt {
     # -A "file:rev_eadapters.fasta" \
 
     cutadapt \
-        --quality-cutoff 25,25 \
+        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
         -a "file:fwd_adapters.fasta" \
         -A "file:rev_adapters.fasta" \
-        --minimum-length 50 \
+        --minimum-length "${params.minimum_read_length}" \
         -n 1 \
         --cores ${task.cpus} \
         -o "tmp1_${fwd_out}" \
@@ -612,10 +582,10 @@ process cutadapt {
         > ${base_name}_cutadapt_pass1.txt
 
     cutadapt \
-        --quality-cutoff 25,25 \
+        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
         -a "file:fwd_adapters.fasta" \
         -A "file:rev_adapters.fasta" \
-        --minimum-length 50 \
+        --minimum-length "${params.minimum_read_length}" \
         -n 1 \
         --cores ${task.cpus} \
         -o "tmp2_${fwd_out}" \
@@ -625,10 +595,10 @@ process cutadapt {
         > ${base_name}_cutadapt_pass2.txt
 
     cutadapt \
-        --quality-cutoff 25,25 \
+        --quality-cutoff "${params.quality_trim_phred},${params.quality_trim_phred}" \
         -a "file:fwd_adapters.fasta" \
         -A "file:rev_adapters.fasta" \
-        --minimum-length 50 \
+        --minimum-length "${params.minimum_read_length}" \
         -n 1 \
         --cores ${task.cpus} \
         -o "${fwd_out}" \
@@ -864,7 +834,8 @@ if ( params.references && !params.nomap ) {
 
         input:
         set val(ref_name), file("ref"),
-            val(base_name), file(fwd_read), file(rev_read) from referenceIndexes.combine(fastqPairs4Alignment)
+            val(base_name), file(fwd_read), file(rev_read) from referenceIndexes
+            .combine(fastqPairs4Alignment)
 
         output:
         set val(ref_name), val(base_name), file("${base_name}.sam") into alignedReads
@@ -884,7 +855,7 @@ if ( params.references && !params.nomap ) {
           basecov="${base_name}_basecov.txt" \
           bincov="${base_name}_bincov.txt" \
           bhist="${base_name}_bhist.txt" \
-          qhist="${base_name}_qhist" \
+          qhist="${base_name}_qhist.txt" \
           aqhist="${base_name}_aqhist.txt" \
           lhist="${base_name}_lhist.txt" \
           ihist="${base_name}_ihist.txt" \
@@ -1011,10 +982,8 @@ if ( params.contaminants ) {
     joined4MergePairs = contaminantFiltered4MergePairs
         .filter { b, t, fn, rn, ff, rf -> t == "untrimmed" }
         .map { b, t, fn, rn, ff, rf -> [b, fn, rn, ff, rf] }
-        .join(foundAdapters4MergePairs, by: 0)
 } else {
     joined4MergePairs = syntheticContaminantFiltered4MergePairs
-        .join(foundAdapters4MergePairs, by: 0)
 }
 
 
@@ -1040,8 +1009,7 @@ if ( !params.nomerge ) {
         input:
         set val(base_name),
             val(fwd_name), val(rev_name),
-            file("fwd"), file("rev"),
-            file("fwd_adapters.fasta"), file("rev_adapters.fasta") from joined4MergePairs
+            file("fwd"), file("rev") from joined4MergePairs
         each stringency from stringencies
 
         output:
@@ -1064,8 +1032,6 @@ if ( !params.nomerge ) {
           outu1="${fwd_name}" \
           outu2="${rev_name}" \
           ihist=${base_name}_insert.txt \
-          adapter1="fwd_adapters.fasta" \
-          adapter2="rev_adapters.fasta" \
           ${stringency} \
           rem \
           k=62 \
