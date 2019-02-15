@@ -35,7 +35,7 @@ params.references = false
 params.adapter1 = "data/adapters_truseq_fwd.fasta"
 params.adapter2 = "data/adapters_truseq_rev.fasta"
 params.synthetic_contaminants = "data/synthetic_contaminants.fasta"
-params.quality_filter_phred = 10
+params.quality_filter_phred = 25
 params.quality_trim_phred = 10
 params.minimum_read_length = 50
 params.contaminants = false
@@ -233,7 +233,6 @@ process adapterTrimming {
       k=23 \
       mink=11 \
       hdist=1 \
-      minavgquality="${params.quality_filter_phred}" \
       minlength="${params.minimum_read_length}"
 
     kmercountmulti.sh \
@@ -303,7 +302,6 @@ process qualityTrimming {
       lhist="${base_name}_quality_trimmed_lhist.txt" \
       gchist="${base_name}_quality_trimmed_gchist.txt" \
       gcbins="auto" \
-      minavgquality="${params.quality_filter_phred}" \
       qtrim=r \
       trimq="${params.quality_trim_phred}" \
       minlength="${params.minimum_read_length}"
