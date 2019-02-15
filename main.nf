@@ -1066,7 +1066,6 @@ if ( !params.nomerge ) {
           ihist=${base_name}_insert.txt \
           adapter1="fwd_adapters.fasta" \
           adapter2="rev_adapters.fasta" \
-          jni \
           ${stringency} \
           rem \
           k=62 \
