@@ -74,11 +74,9 @@ if ( params.adapter1 && params.adapter2 ) {
 
 
 if ( params.synthetic_contaminants ) {
-    syntheticContaminantSeqs = Channel.fromPath(
-        params.synthetic_contaminants,
-        checkIfExists: true,
-        type: "file"
-    ).collectFile(name: "synthetic_contaminants.fasta", newLine: true, sort: "deep")
+    syntheticContaminantSeqs = Channel.fromPath(params.synthetic_contaminants, checkIfExists: true, type: "file")
+        .collectFile(name: "synthetic_contaminants.fasta", newLine: true, sort: "deep")
+        .first()
 } else {
     log.info "Hey I need some synthetic contaminant sequences to filter out please."
     log.info "I suggest using at least the 'data/synthetic_contaminants.fasta' file."
@@ -101,16 +99,14 @@ if ( params.references ) {
 
 
 if ( params.krakendb ) {
-    krakenDB = Channel.fromPath( params.krakendb, checkIfExists: true, type: "dir" )
+    krakenDB = Channel.fromPath( params.krakendb, checkIfExists: true, type: "dir" ).first()
 }
 
 
 if ( params.contaminants ) {
-    contaminants = Channel.fromPath(
-        params.contaminants,
-        checkIfExists: true,
-        type: "file"
-    ).collectFile(name: "contaminants.fasta", newLine: true, sort: "deep")
+    contaminants = Channel.fromPath(params.contaminants, checkIfExists: true, type: "file")
+        .collectFile(name: "contaminants.fasta", newLine: true, sort: "deep")
+        .first()
 }
 
 
