@@ -969,7 +969,7 @@ if ( params.krakendb ) {
      */
     process searchKraken {
         label "kraken"
-        label "biggish_task"
+        label "big_task"
 
         publishDir "contaminants"
 
@@ -984,8 +984,11 @@ if ( params.krakendb ) {
 
         """
         kraken2 \
+          --preload \
+          --threads ${task.cpus} \
           --confidence 0.2 \
           --minimum-base-quality 25 \
+          --check-names \
           --paired \
           --output "${base_name}.tsv" \
           --report "${base_name}_report.txt" \
