@@ -42,7 +42,7 @@ params.contaminants = false
 params.nomap = false
 params.nomerge = false
 params.krakendb = false
-
+params.kraken_low_mem = false
 
 if ( params.fastq ) {
     fastqPairs = Channel.fromFilePairs(
@@ -825,7 +825,6 @@ if ( params.references && !params.nomap ) {
      * Construct genome indices for each reference to align to.
      */
     process genomeIndex {
-        label "java"
         label "bbmap"
         label "biggish_task"
 
@@ -847,7 +846,6 @@ if ( params.references && !params.nomap ) {
      * Align reads to each reference and collect stats.
      */
     process genomeAlign {
-        label "java"
         label "bbmap"
         label "biggish_task"
 
@@ -982,13 +980,20 @@ if ( params.krakendb ) {
         output:
         set file("${base_name}.tsv"), file("${base_name}_report.txt") into krakenResults
 
+	script:
+
+        if ( params.kraken_low_mem ) {
+            mmap = "--memory-mapping"
+        } else {
+            mmap = ""
+        }
+
         """
         kraken2 \
-          --preload \
           --threads ${task.cpus} \
+          ${mmap} \
           --confidence 0.2 \
           --minimum-base-quality 25 \
-          --check-names \
           --paired \
           --output "${base_name}.tsv" \
           --report "${base_name}_report.txt" \
