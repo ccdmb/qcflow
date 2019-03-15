@@ -35,8 +35,8 @@ params.references = false
 params.adapter1 = "data/adapters_truseq_fwd.fasta"
 params.adapter2 = "data/adapters_truseq_rev.fasta"
 params.synthetic_contaminants = "data/synthetic_contaminants.fasta"
-params.quality_filter_phred = 25
-params.quality_trim_phred = 10
+params.quality_filter_phred = 5
+params.quality_trim_phred = 2
 params.minimum_read_length = 50
 params.contaminants = false
 params.nomap = false
@@ -499,8 +499,8 @@ process syntheticContaminantFilter {
       gchist="${base_name}_synthetic_contaminant_filtered_gchist.txt" \
       gcbins="auto" \
       k=31 \
-      hdist=1 \
-      mcf=0.5 \
+      hdist=0 \
+      mcf=0.7 \
       minavgquality="${params.quality_filter_phred}" \
       minlength="${params.minimum_read_length}"
 
@@ -612,7 +612,7 @@ if ( params.contaminants ) {
           lhist="${base_name}_contaminant_filtered_lhist.txt" \
           gchist="${base_name}_contaminant_filtered_gchist.txt" \
           gcbins="auto" \
-          k=25 \
+          k=29 \
           hdist=0 \
           mcf=0.6
 
