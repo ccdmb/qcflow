@@ -10,12 +10,12 @@ This is intended for my own use, but feel free to do what ever you like with it.
 
 ```bash
 nextflow run -resume darcyabjones/qcflow \
-  --fastq "fastq/*_R{1,2}.fastq.gz" \
-  --adapter1 "data/adapters_truseq_fwd.fasta" \
-  --adapter2 "data/adapters_truseq_rev.fasta" \
-  --synthetic_contaminants "data/synthetic_contaminants.fasta" \
-  --references "my_genome*.fasta" \
-  --map
+--fastq "fastq/*_R{1,2}.fastq.gz" \
+--adapter1 "data/truseq_fwd.fasta" \
+--adapter2 "data/truseq_rev.fasta" \
+--scontaminants "data/synth_cont.fasta" \
+--references "my_genome*.fasta" \
+--map
 ```
 
 Note that the quotes around globbing patterns are important for some
@@ -52,7 +52,7 @@ param                      | default          | description
                            | truseq_rev.fasta | from the 3' end.
 
 `--scontaminants <*fasta>` | data/            | Synthetic contaminants to
-                           | synt_cont.fasta  | filter from the reads.
+                           | synth_cont.fasta | filter from the reads.
                            |                  | This is for things like
                            |                  | PHiX or primer dimer, or
                            |                  | common lab vectors that are
@@ -85,6 +85,9 @@ param                      | default          | description
                            |                  | Generally quality trimming
                            |                  | is not useful unless you
                            |                  | have very poor data.
+
+`--use_bbduk_trim`         | false            | Use bbduk for trimming
+                           |                  | instead of cutadapt.
 
 `--min_read_length <int>`  | 50               | Filter out reads with
                            |                  | lengths less than this

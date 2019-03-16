@@ -13,8 +13,16 @@ module load nextflow/19.01.0.5050-bin
 
 nextflow run -resume -profile pawsey_zeus ./main.nf \
   --max_cpus 28 \
-  --fastq "data/*_{1,2}.fq.gz" \
-  --krakendb "databases/krakendb" \
-  --contaminants "databases/krakendb/library/{bacteria,archaea,protozoa,viral,UniVec_Core,human}/library.fna" \
+  --outdir results \
+  --fastq "fastq/*_R{1,2}.fastq.gz" \
   --references "references/*.fasta" \
-  --synthetic_contaminants "{data/synthetic_contaminants.fasta,databases/krakendb/library/UniVec_Core/library.fna}"
+  --adapter1 data/truseq_fwd.fasta \
+  --adapter2 data/truseq_rev.fasta \
+  --scontaminants data/synth_cont.fasta \
+  --filter_phred 5 \
+  --trim_phred 2 \
+  --min_read_length 50 
+ 
+#  --map
+#  --krakendb "databases/krakendb" \
+#  --kraken_low_mem

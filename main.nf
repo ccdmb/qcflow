@@ -18,9 +18,9 @@ def helpMessage() {
     ```bash
     nextflow run -resume darcyabjones/qcflow \
       --fastq "fastq/*_R{1,2}.fastq.gz" \
-      --adapter1 "data/adapters_truseq_fwd.fasta" \
-      --adapter2 "data/adapters_truseq_rev.fasta" \
-      --synthetic_contaminants "data/synthetic_contaminants.fasta" \
+      --adapter1 "data/truseq_fwd.fasta" \
+      --adapter2 "data/truseq_rev.fasta" \
+      --scontaminants "data/synth_cont.fasta" \
       --references "my_genome*.fasta" \
       --map
     ```
@@ -59,7 +59,7 @@ def helpMessage() {
                                | truseq_rev.fasta | from the 3' end.
 
     `--scontaminants <*fasta>` | data/            | Synthetic contaminants to
-                               | synt_cont.fasta  | filter from the reads.
+                               | synth_cont.fasta | filter from the reads.
                                |                  | This is for things like
                                |                  | PHiX or primer dimer, or
                                |                  | common lab vectors that are
