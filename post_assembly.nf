@@ -20,9 +20,8 @@ params.nobusco = false
 params.busco_lineage = false
 params.augustus_species = false
 params.augustus_params = false
-params.kraken = false
-params.krakendb = false
-params.kraken_low_mem = false
+params.nosourmash = false
+params.sourmashdb = false
 
 
 // Find common prefix between 2 strings.
@@ -43,6 +42,24 @@ if ( params.busco_lineage ) {
         checkIfExists: true,
         type: "file"
     )
+}
+
+if ( params.sourmashdb ) {
+    sourmashDB = Channel
+        .fromPath( params.sourmashdb, checkIfExists: true, type: "file" )
+        .first()
+} else if ( !params.nosourmash ) {
+    process getSourmashDB {
+        label "download"
+        storeDir "${params.outdir}/databases"
+
+        output:
+        file "genbank-k31.lca.json.gz" into sourmashDB
+
+        """
+        wget -o genbank-k31.lca.json.gz https://osf.io/4f8n3/download
+        """
+    }
 }
 
 if ( params.table ) {
@@ -80,7 +97,7 @@ if ( params.assemblies ) {
 assemblies.into {
     assemblies4Stats;
     assemblies4Busco;
-    assemblies4Kraken;
+    assemblies4Sourmash;
     assemblies4Align;
     assemblies4FilterLength;
 }
@@ -373,44 +390,41 @@ if ( params.table && params.map) {
 }
 
 
-if ( params.kraken && params.krakendb ) {
+if ( !params.nosourmash && params.sourmashdb ) {
 
     /*
      * Classify the reads using Kraken to detect uncommon contamination.
      */
-    process searchKraken {
-        label "kraken"
-        label "big_task"
+    process searchSourmash {
+        label "sourmash"
+        label "medium_task"
 
         publishDir "${params.outdir}/asm_contaminants"
 
         tag { name }
 
         input:
-        file "krakendb" from krakenDB
-        set val(name), file(asm) from assemblies4Kraken
+        file "genbank_lca.json.gz" from sourmashDB
+        set val(name), file(asm) from assemblies4Sourmash
 
         output:
-        set file("${asm.simpleName}.tsv"),
-            file("${asm.simpleName}_report.txt") into krakenResults
-
-        script:
-        if ( params.kraken_low_mem ) {
-            mmap = "--memory-mapping"
-        } else {
-            mmap = ""
-        }
+        file "${asm.simpleName}.csv" into sourmashResults
 
         """
-        kraken2 \
-          --threads ${task.cpus} \
-          ${mmap} \
-          --confidence 0.2 \
-          --output "${asm.simpleName}.tsv" \
-          --report "${asm.simpleName}_report.txt" \
-          --db krakendb \
-          --use-names \
+        sourmash \
+          compute \
+          --scaled 1000 \
+          -k 21,31,51 \
+          --singleton \
+          -o "${asm}.sig" \
           "${asm}"
+
+        sourmash \
+          lca \
+          classify \
+          --query "${asm}.sig" \
+          --db genbank_lca.json.gz \
+          --output "${asm.simpleName}.csv" \
         """
     }
 }
