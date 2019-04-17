@@ -57,7 +57,7 @@ if ( params.sourmashdb ) {
         file "genbank-k31.lca.json.gz" into sourmashDB
 
         """
-        wget -o genbank-k31.lca.json.gz https://osf.io/4f8n3/download
+        wget -O genbank-k31.lca.json.gz https://osf.io/4f8n3/download
         """
     }
 }
@@ -280,8 +280,8 @@ if ( params.table && params.map) {
         FWD_FTYPE=\$(file -b --dereference *R1.fastq)
         REV_FTYPE=\$(file -b --dereference *R2.fastq)
         # This keeps only stuff up to first whitespace.
-        FWD_FTYPE=\${FWD_FTYPE[@]%% *}
-        REV_FTYPE=\${REV_FTYPE[@]%% *}
+        FWD_FTYPE=\${FWD_FTYPE%% *}
+        REV_FTYPE=\${REV_FTYPE%% *}
 
         if [ "\${FWD_FTYPE}" = "gzip" ]; then
             EXT=".gz"
