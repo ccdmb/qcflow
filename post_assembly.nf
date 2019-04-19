@@ -98,6 +98,8 @@ assemblies.into {
     assemblies4Stats;
     assemblies4Busco;
     assemblies4Sourmash;
+    assemblies4AlignContigs;
+    assemblies4FilterCoveredContigs;
     assemblies4Align;
     assemblies4FilterLength;
 }
@@ -132,6 +134,47 @@ process assemblyStats {
       gcformat=1 \
     > ${fasta.simpleName}_stats.txt
     """
+}
+
+
+process alignContigs {
+    label "mummer"
+    tag { name }
+    publishDir "${params.outdir}/asm_self_aligned"
+
+    input:
+    set val(name), file(fasta) from assemblies4AlignContigs
+
+    output:
+    set val(name), file("${name}.delta"), file("${name}.coords") into alignedContigs
+
+    """
+    nucmer \
+      --maxmatch \
+      --nosimplify \
+      --threads ${task.cpus} \
+      --prefix ${name} \
+      ${fasta} \
+      ${fasta}
+
+    show-coords -T -c -l -H ${name}.delta > ${name}.coords
+    """
+}
+
+
+process filterCoveredContigs {
+    label "python3"
+    tag { name }
+    publishDir "${params.outdir}/asm_self_aligned"
+
+    input:
+    set val(name), file(fasta) from assemblies4FilterCoveredContigs
+    set val(name), file("${name}.delta"), file("${name}.coords") from alignedContigs
+
+    output:
+    set val(name), file("${name}.summary"), file("${name}.filtered") into filteredContigs
+
+
 }
 
 
